@@ -36,41 +36,24 @@ class MainActivity : AppCompatActivity() {
         btnGetRiders = findViewById(R.id.btnGetRiders)
         tvResult = findViewById(R.id.tvResult)
 
-        // استرجاع التوكن المحفوظ
         etToken.setText(tokenManager.getAccessToken().orEmpty())
 
-        // حفظ التوكن
         btnSaveToken.setOnClickListener {
             val token = etToken.text.toString().trim()
 
             if (token.isBlank()) {
-                Toast.makeText(
-                    this,
-                    "اكتب التوكن الأول",
-                    Toast.LENGTH_SHORT
-                ).show()
+                Toast.makeText(this, "اكتب التوكن الأول", Toast.LENGTH_SHORT).show()
             } else {
                 tokenManager.saveTokens(token)
-
-                Toast.makeText(
-                    this,
-                    "تم حفظ التوكن",
-                    Toast.LENGTH_SHORT
-                ).show()
+                Toast.makeText(this, "تم حفظ التوكن", Toast.LENGTH_SHORT).show()
             }
         }
 
-        // جلب المناديب
         btnGetRiders.setOnClickListener {
-            // حفظ أحدث قيمة مكتوبة قبل الطلب
             val token = etToken.text.toString().trim()
 
             if (token.isBlank()) {
-                Toast.makeText(
-                    this,
-                    "اكتب التوكن الأول",
-                    Toast.LENGTH_SHORT
-                ).show()
+                Toast.makeText(this, "اكتب التوكن الأول", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
@@ -78,7 +61,7 @@ class MainActivity : AppCompatActivity() {
 
             lifecycleScope.launch {
                 btnGetRiders.isEnabled = false
-                tvResult.text = "جاري تحميل بيانات المناديب..."
+                tvResult.text = "جاري الاتصال بالسيرفر..."
 
                 try {
                     val response = apiService.getRiders(
@@ -87,32 +70,39 @@ class MainActivity : AppCompatActivity() {
                         size = 10
                     )
 
-                    if (response.isSuccessful) {
-                        val body = response.body()
+                    val rawBody = response.body()?.string().orEmpty()
+                    val errorBody = response.errorBody()?.string().orEmpty()
+                    val serverText = if (response.isSuccessful) rawBody else errorBody
 
-                        tvResult.text = if (body != null) {
-                            "تم الاتصال بنجاح ✅\n\n$body"
-                        } else {
-                            "تم الاتصال بنجاح، لكن الاستجابة فارغة."
-                        }
-                    } else {
-                        tvResult.text =
-                            "فشل الطلب ❌\n" +
-                            "كود HTTP: ${response.code()}\n" +
-                            "الرسالة: ${response.message()}"
+                    // لا نعرض أي قيمة محتملة للتوكن أو بيانات المصادقة.
+                    val safeText = serverText
+                        .replace(
+                            Regex("(?i)(access_token|refresh_token|authorization|token)\\s*[:=]\\s*[\\"']?[^\\s,\\"'}]+"),
+                            "$1=[HIDDEN]"
+                        )
+                        .take(2500)
 
-                        if (response.code() == 401) {
-                            Toast.makeText(
-                                this@MainActivity,
-                                "التوكن غير صالح أو انتهت صلاحيته",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
+                    tvResult.text = buildString {
+                        append(if (response.isSuccessful) "وصل رد من السيرفر ✅" else "الطلب فشل ❌")
+                        append("\nHTTP: ${response.code()} ${response.message()}")
+                        append("\n\nرد السيرفر:\n")
+                        append(safeText.ifBlank { "(السيرفر رجّع ردًا فارغًا)" })
+                    }
+
+                    if (response.code() == 401) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "التوكن مرفوض أو منتهي الصلاحية",
+                            Toast.LENGTH_LONG
+                        ).show()
                     }
                 } catch (e: Exception) {
-                    tvResult.text =
-                        "حدث خطأ أثناء الاتصال ❌\n" +
-                        (e.message ?: "خطأ غير معروف")
+                    tvResult.text = buildString {
+                        append("تعذر الاتصال ❌\n")
+                        append(e.javaClass.simpleName)
+                        append("\n")
+                        append(e.message ?: "خطأ غير معروف")
+                    }
                 } finally {
                     btnGetRiders.isEnabled = true
                 }
