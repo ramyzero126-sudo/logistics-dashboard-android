@@ -13,6 +13,7 @@ import com.example.logisticsdashboard.api.ApiService
 import com.example.logisticsdashboard.api.RetrofitClient
 import com.example.logisticsdashboard.data.TokenManager
 import kotlinx.coroutines.launch
+import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
 
@@ -42,10 +43,18 @@ class MainActivity : AppCompatActivity() {
             val token = etToken.text.toString().trim()
 
             if (token.isBlank()) {
-                Toast.makeText(this, "اكتب التوكن الأول", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this,
+                    "اكتب التوكن الأول",
+                    Toast.LENGTH_SHORT
+                ).show()
             } else {
                 tokenManager.saveTokens(token)
-                Toast.makeText(this, "تم حفظ التوكن", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this,
+                    "تم حفظ التوكن",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
 
@@ -53,59 +62,86 @@ class MainActivity : AppCompatActivity() {
             val token = etToken.text.toString().trim()
 
             if (token.isBlank()) {
-                Toast.makeText(this, "اكتب التوكن الأول", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this,
+                    "اكتب التوكن الأول",
+                    Toast.LENGTH_SHORT
+                ).show()
                 return@setOnClickListener
             }
 
             tokenManager.saveTokens(token)
+            loadRiders()
+        }
+    }
 
-            lifecycleScope.launch {
-                btnGetRiders.isEnabled = false
-                tvResult.text = "جاري الاتصال بالسيرفر..."
+    private fun loadRiders() {
+        lifecycleScope.launch {
+            btnGetRiders.isEnabled = false
+            tvResult.text = "جاري الاتصال بالسيرفر..."
 
-                try {
-                    val response = apiService.getRiders(
-                        cityId = 214,
-                        page = 0,
-                        size = 10
-                    )
+            try {
+                val response = apiService.getRiders(
+                    cityId = 214,
+                    page = 0,
+                    size = 10
+                )
 
-                    val rawBody = response.body()?.string().orEmpty()
-                    val errorBody = response.errorBody()?.string().orEmpty()
-                    val serverText = if (response.isSuccessful) rawBody else errorBody
-
-                    // لا نعرض أي قيمة محتملة للتوكن أو بيانات المصادقة.
-                    val safeText = serverText
-                        .replace(
-                            Regex("(?i)(access_token|refresh_token|authorization|token)\\s*[:=]\\s*[\\"']?[^\\s,\\"'}]+"),
-                            "$1=[HIDDEN]"
-                        )
-                        .take(2500)
-
-                    tvResult.text = buildString {
-                        append(if (response.isSuccessful) "وصل رد من السيرفر ✅" else "الطلب فشل ❌")
-                        append("\nHTTP: ${response.code()} ${response.message()}")
-                        append("\n\nرد السيرفر:\n")
-                        append(safeText.ifBlank { "(السيرفر رجّع ردًا فارغًا)" })
-                    }
-
-                    if (response.code() == 401) {
-                        Toast.makeText(
-                            this@MainActivity,
-                            "التوكن مرفوض أو منتهي الصلاحية",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                } catch (e: Exception) {
-                    tvResult.text = buildString {
-                        append("تعذر الاتصال ❌\n")
-                        append(e.javaClass.simpleName)
-                        append("\n")
-                        append(e.message ?: "خطأ غير معروف")
-                    }
-                } finally {
-                    btnGetRiders.isEnabled = true
+                val serverText = if (response.isSuccessful) {
+                    response.body()?.use { it.string() }.orEmpty()
+                } else {
+                    response.errorBody()?.use { it.string() }.orEmpty()
                 }
+
+                tvResult.text = buildString {
+                    append(
+                        if (response.isSuccessful) {
+                            "تم الاتصال بالسيرفر ✅"
+                        } else {
+                            "السيرفر رفض الطلب ❌"
+                        }
+                    )
+                    append("\nHTTP: ${response.code()}")
+                    append("\nالحالة: ${response.message()}")
+                    append("\n\nرد السيرفر:\n")
+                    append(
+                        serverText
+                            .take(2500)
+                            .ifBlank { "السيرفر رجّع ردًا فارغًا" }
+                    )
+                }
+
+                when (response.code()) {
+                    401 -> Toast.makeText(
+                        this@MainActivity,
+                        "التوكن غير صالح أو انتهت صلاحيته",
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    403 -> Toast.makeText(
+                        this@MainActivity,
+                        "الحساب لا يملك صلاحية الوصول",
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    404 -> Toast.makeText(
+                        this@MainActivity,
+                        "مسار API أو رقم المدينة غير صحيح",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            } catch (e: IOException) {
+                tvResult.text =
+                    "فشل الاتصال بالإنترنت ❌\n${e.message ?: "تحقق من الاتصال"}"
+            } catch (e: Exception) {
+                tvResult.text = buildString {
+                    append("حدث خطأ ❌\n")
+                    append(e.javaClass.simpleName)
+                    append("\n")
+                    append(e.message ?: "خطأ غير معروف")
+                }
+            } finally {
+                btnGetRiders.isEnabled = true
             }
         }
     }
