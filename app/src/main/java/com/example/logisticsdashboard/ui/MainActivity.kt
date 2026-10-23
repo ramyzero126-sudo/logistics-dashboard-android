@@ -40,39 +40,32 @@ class MainActivity : AppCompatActivity() {
         etToken.setText(tokenManager.getAccessToken().orEmpty())
 
         btnSaveToken.setOnClickListener {
-            val token = etToken.text.toString().trim()
-
-            if (token.isBlank()) {
-                Toast.makeText(
-                    this,
-                    "اكتب التوكن الأول",
-                    Toast.LENGTH_SHORT
-                ).show()
-            } else {
-                tokenManager.saveTokens(token)
-                Toast.makeText(
-                    this,
-                    "تم حفظ التوكن",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
+            saveToken()
         }
 
         btnGetRiders.setOnClickListener {
             val token = etToken.text.toString().trim()
 
             if (token.isBlank()) {
-                Toast.makeText(
-                    this,
-                    "اكتب التوكن الأول",
-                    Toast.LENGTH_SHORT
-                ).show()
+                showToast("أدخل بيانات المصادقة أولاً")
                 return@setOnClickListener
             }
 
             tokenManager.saveTokens(token)
             loadRiders()
         }
+    }
+
+    private fun saveToken() {
+        val token = etToken.text.toString().trim()
+
+        if (token.isBlank()) {
+            showToast("اكتب التوكن الأول")
+            return
+        }
+
+        tokenManager.saveTokens(token)
+        showToast("تم حفظ التوكن")
     }
 
     private fun loadRiders() {
@@ -93,49 +86,124 @@ class MainActivity : AppCompatActivity() {
                     response.errorBody()?.use { it.string() }.orEmpty()
                 }
 
-                tvResult.text = buildString {
-                    append(
-                        if (response.isSuccessful) {
-                            "تم الاتصال بالسيرفر ✅"
-                        } else {
-                            "السيرفر رفض الطلب ❌"
-                        }
+                val contentType =
+                    response.headers()["Content-Type"].orEmpty()
+
+                val bodyStart = serverText.trimStart()
+
+                val isHtml =
+                    contentType.contains(
+                        "text/html",
+                        ignoreCase = true
+                    ) ||
+                    bodyStart.startsWith(
+                        "<!DOCTYPE html",
+                        ignoreCase = true
+                    ) ||
+                    bodyStart.startsWith(
+                        "<html",
+                        ignoreCase = true
                     )
+
+                val isJson =
+                    contentType.contains(
+                        "application/json",
+                        ignoreCase = true
+                    ) ||
+                    bodyStart.startsWith("{") ||
+                    bodyStart.startsWith("[")
+
+                val title = when {
+                    response.code() == 401 ->
+                        "المصادقة غير مقبولة ❌"
+
+                    response.code() == 403 ->
+                        "الوصول مرفوض ❌"
+
+                    isHtml ->
+                        "وصلت صفحة HTML بدل بيانات المناديب ❌"
+
+                    response.isSuccessful && isJson ->
+                        "تم استلام رد JSON ✅"
+
+                    response.isSuccessful ->
+                        "الاتصال نجح لكن الرد ليس JSON ❌"
+
+                    else ->
+                        "السيرفر رفض الطلب ❌"
+                }
+
+                tvResult.text = buildString {
+                    append(title)
                     append("\nHTTP: ${response.code()}")
                     append("\nالحالة: ${response.message()}")
+                    append(
+                        "\nنوع المحتوى: ${
+                            contentType.ifBlank { "غير محدد" }
+                        }"
+                    )
+
+                    if (isHtml) {
+                        append("\n\nالتوضيح:")
+                        append(
+                            "\nالسيرفر أعاد صفحة HTML، غالبًا صفحة " +
+                                "Cloudflare Access أو تسجيل الدخول."
+                        )
+                        append(
+                            "\nHTTP 200 وحده لا يؤكد وصول بيانات API."
+                        )
+                    } else if (response.isSuccessful && isJson) {
+                        append(
+                            "\n\nتم استلام JSON. " +
+                                "هذا يؤكد صيغة الرد فقط، وليس صحة محتواه."
+                        )
+                    }
+
                     append("\n\nرد السيرفر:\n")
                     append(
-                        serverText
-                            .take(2500)
-                            .ifBlank { "السيرفر رجّع ردًا فارغًا" }
+                        serverText.take(2500)
+                            .ifBlank {
+                                "السيرفر رجّع ردًا فارغًا"
+                            }
                     )
                 }
 
-                when (response.code()) {
-                    401 -> Toast.makeText(
-                        this@MainActivity,
-                        "التوكن غير صالح أو انتهت صلاحيته",
-                        Toast.LENGTH_LONG
-                    ).show()
+                when {
+                    response.code() == 401 -> {
+                        showToast(
+                            "راجع بيانات المصادقة وصلاحيتها"
+                        )
+                    }
 
-                    403 -> Toast.makeText(
-                        this@MainActivity,
-                        "الحساب لا يملك صلاحية الوصول",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    response.code() == 403 -> {
+                        showToast(
+                            "تحقق من صلاحيات الحساب والوصول"
+                        )
+                    }
 
-                    404 -> Toast.makeText(
-                        this@MainActivity,
-                        "مسار API أو رقم المدينة غير صحيح",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    response.code() == 404 -> {
+                        showToast(
+                            "راجع مسار API ورقم المدينة"
+                        )
+                    }
+
+                    isHtml -> {
+                        showToast(
+                            "الرد صفحة تسجيل دخول، وليس بيانات المناديب"
+                        )
+                    }
                 }
+
             } catch (e: IOException) {
-                tvResult.text =
-                    "فشل الاتصال بالإنترنت ❌\n${e.message ?: "تحقق من الاتصال"}"
+                tvResult.text = buildString {
+                    append("فشل الاتصال بالإنترنت ❌\n")
+                    append(
+                        e.message ?: "تحقق من الاتصال وحاول مرة أخرى"
+                    )
+                }
             } catch (e: Exception) {
                 tvResult.text = buildString {
-                    append("حدث خطأ ❌\n")
+                    append("حدث خطأ أثناء قراءة الرد ❌\n")
                     append(e.javaClass.simpleName)
                     append("\n")
                     append(e.message ?: "خطأ غير معروف")
@@ -144,5 +212,13 @@ class MainActivity : AppCompatActivity() {
                 btnGetRiders.isEnabled = true
             }
         }
+    }
+
+    private fun showToast(message: String) {
+        Toast.makeText(
+            this,
+            message,
+            Toast.LENGTH_LONG
+        ).show()
     }
 }
