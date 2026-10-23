@@ -1,3 +1,4 @@
+
 package com.example.logisticsdashboard.api
 
 import com.example.logisticsdashboard.data.TokenManager
@@ -14,7 +15,8 @@ object RetrofitClient {
 
     fun create(tokenManager: TokenManager): ApiService {
         val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            redactHeader("Authorization")
+            level = HttpLoggingInterceptor.Level.BASIC
         }
 
         val client = OkHttpClient.Builder()
@@ -25,7 +27,7 @@ object RetrofitClient {
             .build()
 
         return Retrofit.Builder()
-            .baseURL(BASE_URL)
+            .baseUrl(BASE_URL)
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
